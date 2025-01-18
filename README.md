@@ -2,5 +2,5 @@
 
 Sample LVGL sketch for M5 Stick C board
 
-~lvgl 8.4.0
+~lvgl 9.2.2
 

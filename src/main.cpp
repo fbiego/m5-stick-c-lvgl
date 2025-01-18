@@ -30,43 +30,39 @@
 
 */
 
-
 #include <Arduino.h>
 
 #include <Timber.h>
 #include <lvgl.h>
 #include <M5Unified.h>
 
-#define SCR 5
-
 // landscape screen config
 static const uint32_t screenWidth = 160;
 static const uint32_t screenHeight = 80;
 
-static lv_disp_draw_buf_t draw_buf;
-static lv_disp_drv_t disp_drv;
+const unsigned int lvBufferSize = screenWidth * screenHeight / 4;
+uint8_t lvBuffer[2][lvBufferSize];
 
-static lv_color_t disp_draw_buf[screenWidth * SCR];
-static lv_color_t disp_draw_buf2[screenWidth * SCR];
-
-void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
+void my_disp_flush(lv_display_t *display, const lv_area_t *area, unsigned char *data)
 {
-  uint32_t w = (area->x2 - area->x1 + 1);
-  uint32_t h = (area->y2 - area->y1 + 1);
-  uint32_t wh = w * h;
+  uint32_t w = lv_area_get_width(area);
+  uint32_t h = lv_area_get_height(area);
 
-  M5.Lcd.startWrite();
-  M5.Lcd.setAddrWindow(area->x1, area->y1, w, h);
-  while (wh--)
-    M5.Lcd.pushColor(color_p++->full);
-  M5.Lcd.endWrite();
+  lv_draw_sw_rgb565_swap(data, w * h);
 
-  lv_disp_flush_ready(disp); /* tell lvgl that flushing is done */
+  M5.Lcd.pushImageDMA<uint16_t>(area->x1, area->y1, w, h, (uint16_t *)data);
+
+  lv_display_flush_ready(display); /* tell lvgl that flushing is done */
 }
 
 void logCallback(Level level, unsigned long time, String message)
 {
   Serial.print(message);
+}
+
+static uint32_t my_tick(void)
+{
+  return millis();
 }
 
 void setup()
@@ -82,39 +78,22 @@ void setup()
 
   lv_init();
 
-  if (!disp_draw_buf)
-  {
-    Timber.e("LVGL disp_draw_buf allocate failed!");
-  }
-  else
-  {
+  lv_tick_set_cb(my_tick);
 
-    Timber.i("Display buffer size initialized ");
+  static auto *lvDisplay = lv_display_create(screenWidth, screenHeight);
+  lv_display_set_color_format(lvDisplay, LV_COLOR_FORMAT_RGB565);
+  lv_display_set_flush_cb(lvDisplay, my_disp_flush);
 
-    lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, disp_draw_buf2, screenWidth * SCR);
+  lv_display_set_buffers(lvDisplay, lvBuffer[0], lvBuffer[1], lvBufferSize, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
-    /* Initialize the display */
-    lv_disp_drv_init(&disp_drv);
-    /* Change the following line to your display resolution */
-    disp_drv.hor_res = screenWidth;
-    disp_drv.ver_res = screenHeight;
-    disp_drv.flush_cb = my_disp_flush;
-    disp_drv.draw_buf = &draw_buf;
-    lv_disp_drv_register(&disp_drv);
+  lv_obj_t *label1 = lv_label_create(lv_screen_active());
+  lv_obj_align(label1, LV_ALIGN_CENTER, 0, 0);
+  lv_label_set_long_mode(label1, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(label1, screenWidth - 30);
+  lv_label_set_text(label1, "M5 Stick C LVGL v9");
 
-    lv_obj_t *label1 = lv_label_create(lv_scr_act());
-    lv_obj_align(label1, LV_ALIGN_CENTER, 0, 0);
-    lv_label_set_long_mode(label1, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(label1, screenWidth - 30);
-    lv_label_set_text(label1, "M5 Stick C LVGL");
-
-    // /*Create a slider below the label*/
-    // lv_obj_t *slider1 = lv_slider_create(lv_scr_act());
-    // lv_obj_set_width(slider1, screenWidth - 40);
-    // lv_obj_align_to(slider1, label1, LV_ALIGN_OUT_BOTTOM_MID, 0, 50);
-
-    Timber.i("Setup done");
-  }
+  Timber.i("Setup done");
+  
 
 
 }
@@ -124,7 +103,6 @@ void loop()
   M5.update();
 
   lv_timer_handler(); /* let the GUI do its work */
-
   delay(5);
 
 }
